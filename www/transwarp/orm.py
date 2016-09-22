@@ -7,6 +7,8 @@ orm模块
 """
 
 import db
+import time
+from db import next_id
 
 class Field(object):
 
@@ -87,7 +89,7 @@ class ModelMetaclass(type):
             if isinstance(v, Field):
                 if not v.name:
                     v.name = k
-                print('Found mapping: %s==>%s' % (k, v))
+                # print('Found mapping: %s==>%s' % (k, v))
                 if v.primary_key:
                     if primary_key:
                         raise TypeError('Cannot define more than 1 primary key in class: %s' % name)
@@ -152,33 +154,34 @@ class Model(dict):
     def count_by(cls, where, *args):
         return db.select('select count(%s) from %s %s' % (cls.__primary_key__.name, cls.__table__, where), *args)
 
-    @classmethod
-    def insert(cls):
+    def insert(self):
         fields = []
         params = []
         args = []
-        for k, v in cls.__mappings__.iteritems():
+        for k, v in self.__mappings__.iteritems():
             fields.append(v.name)
             params.append('?')
-            args.append(getattr(cls, k, None))
-        sql = 'insert into %s (%s) values (%s)' % (cls.__table__, ','.join(fields), ','.join(params))
-        db.insert(sql, args)
+            args.append(getattr(self, k, None))
+        sql = 'insert into %s (%s) values (%s)' % (self.__table__, ','.join(fields), ','.join(params))
+        print sql
+        print args
+        return db.update(sql, *args)
 
 class User(Model):
-    __table__ = 'test'
+    __table__ = 'users'
 
-    id = IntegerField(primary_key=True)
-    name = StringField()
-    email = StringField()
-    passwd = StringField()
-    last_modified = FloatField()
+    id = StringField(primary_key=True, default=next_id, ddl='varchar(50)')
+    email = StringField(updatable=False, ddl='varchar(50)')
+    password = StringField(ddl='varchar(50)')
+    admin = BooleanField()
+    name = StringField(ddl='varchar(50)')
+    image = StringField(ddl='varchar(500)')
+    created_at = FloatField(updatable=False, default=time.time)
 
 if __name__=='__main__':
-    db.create_engine('www-data', 'www-data', 'test')
+    db.create_engine('www-data', 'www-data', 'myblog')
 
-    # # 创建一个实例：
-    u = User(id=12345, name='Michael', email='test@orm.org', passwd='my-pwd')
-    # # 保存到数据库：
-    print u.find_all()
-    # u.insert()
-    # u.prints()
+    u = User(name='Test', email='test@example.com', password='1234567890', image='about:blank')
+
+    # print u.insert()
+    print u.admin
