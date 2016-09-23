@@ -93,12 +93,26 @@ class ModelMetaclass(type):
                 if v.primary_key:
                     if primary_key:
                         raise TypeError('Cannot define more than 1 primary key in class: %s' % name)
+                    if v.updateable:
+                        v.updateable = False
+                    if v.nullable:
+                        v.nullable = False
                     primary_key = v
                 mappings[k] = v
         if not primary_key:
             raise TypeError('Primary key not defined in class: %s' % name)
+        """
+        有default的属性生成为类的属性
+        class.age = xxx
+        没有default的属性表现为字典的值
+        class = {'id': 'xxx', 'name': 'xxx'}
+        """
         for k in mappings.iterkeys():
-            attrs.pop(k)
+            tmp = mappings[k].default
+            if tmp != '':
+                attrs[k] = tmp
+            else:
+                attrs.pop(k)
         if not '__table__' in attrs:
             attrs['__table__'] = name.lower()
         attrs['__mappings__'] = mappings
@@ -178,10 +192,11 @@ class User(Model):
     image = StringField(ddl='varchar(500)')
     created_at = FloatField(updatable=False, default=time.time)
 
+
 if __name__=='__main__':
     db.create_engine('www-data', 'www-data', 'myblog')
 
     u = User(name='Test', email='test@example.com', password='1234567890', image='about:blank')
 
-    # print u.insert()
-    print u.admin
+    print u.insert()
+
