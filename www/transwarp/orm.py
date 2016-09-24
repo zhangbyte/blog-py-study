@@ -166,6 +166,7 @@ class Model(dict):
             tmp = getattr(self, k, None)
             if not tmp:
                 tmp = self.__mappings__[k].default
+                self[k]=tmp
             fields.append(v.name)
             params.append('?')
             args.append(tmp)
