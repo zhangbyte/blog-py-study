@@ -17,7 +17,7 @@ class Field(object):
         self._default = kw.get('default', None)
         self.primary_key = kw.get('primary_key', False)
         self.nullable = kw.get('nullable', False)
-        self.updateable = kw.get('updateable', False)
+        self.updateable = kw.get('updateable', True)
         self.insertable = kw.get('insertable', False)
         self.ddl = kw.get('ddl', '')
 
@@ -101,18 +101,8 @@ class ModelMetaclass(type):
                 mappings[k] = v
         if not primary_key:
             raise TypeError('Primary key not defined in class: %s' % name)
-        """
-        有default的属性生成为类的属性
-        class.age = xxx
-        没有default的属性表现为字典的值
-        class = {'id': 'xxx', 'name': 'xxx'}
-        """
         for k in mappings.iterkeys():
-            tmp = mappings[k].default
-            if tmp != '':
-                attrs[k] = tmp
-            else:
-                attrs.pop(k)
+            attrs.pop(k)
         if not '__table__' in attrs:
             attrs['__table__'] = name.lower()
         attrs['__mappings__'] = mappings
@@ -173,30 +163,61 @@ class Model(dict):
         params = []
         args = []
         for k, v in self.__mappings__.iteritems():
+            tmp = getattr(self, k, None)
+            if not tmp:
+                tmp = self.__mappings__[k].default
             fields.append(v.name)
             params.append('?')
-            args.append(getattr(self, k, None))
+            args.append(tmp)
         sql = 'insert into %s (%s) values (%s)' % (self.__table__, ','.join(fields), ','.join(params))
-        print sql
-        print args
+        return db.update(sql, *args)
+
+    def delete(self):
+        pk = self.__primary_key__.name
+        args = (getattr(self, pk), )
+        sql = 'delete from %s where %s=?' % (self.__table__, pk)
+        return db.update(sql, *args)
+
+    def update(self):
+        pk = self.__primary_key__.name
+        args = (getattr(self, pk), )
+        key_value = []
+        for k, v in self.__mappings__.iteritems():
+            if self.__mappings__[k].updateable:   
+                key_value.append(v.name+'=\''+str(getattr(self, k, None))+'\'')
+        sql = 'update %s set %s where %s=?' % (self.__table__, ','.join(key_value), pk)
         return db.update(sql, *args)
 
 class User(Model):
     __table__ = 'users'
 
     id = StringField(primary_key=True, default=next_id, ddl='varchar(50)')
-    email = StringField(updatable=False, ddl='varchar(50)')
+    email = StringField(updateable=False, ddl='varchar(50)')
     password = StringField(ddl='varchar(50)')
     admin = BooleanField()
     name = StringField(ddl='varchar(50)')
     image = StringField(ddl='varchar(500)')
-    created_at = FloatField(updatable=False, default=time.time)
+    created_at = FloatField(updateable=False, default=time.time)
 
 
 if __name__=='__main__':
     db.create_engine('www-data', 'www-data', 'myblog')
 
-    u = User(name='Test', email='test@example.com', password='1234567890', image='about:blank')
+    # u = User(name='Test', email='test@example.com', password='1234567890', image='about:blank')
+    # print u.insert()
 
-    print u.insert()
+    # print User.find_all()
+
+    # u = User.find_first('where email=?', 'test@example.com')
+    # print u.delete()
+
+    # u = User.find_first('where email=?', 'test@example.com')
+    # u.email = 'change@example.com'
+    # u.name = 'change'
+    # print u.update()
+
+
+
+
+
 
