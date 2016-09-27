@@ -22,7 +22,7 @@ def next_id(t=None):
         t = time.time()
     return '%015d%s000' % (int(t * 1000), uuid.uuid4().hex)
 
-def create_engine(user, passwd, db, host='127.0.0.1', port=3306, **kw):
+def create_engine(**kw):
     """
     创建数据库连接
     """
@@ -30,8 +30,8 @@ def create_engine(user, passwd, db, host='127.0.0.1', port=3306, **kw):
     global engine
     if engine is not None:
         raise DBError('Engine is already initialized.')
-    params = dict(user=user, passwd=passwd, db=db, host=host, port=port)
-    defaults = dict(use_unicode=True, charset='utf8')
+    params = kw
+    defaults = dict(host='127.0.0.1', port=3306,use_unicode=True, charset='utf8')
     for k, v in defaults.iteritems():
         params[k] = kw.pop(k, v)
     engine = _Engine(lambda: MySQLdb.connect(**params))

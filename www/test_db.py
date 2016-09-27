@@ -4,7 +4,7 @@ from models import User, Blog, Comment
 
 from transwarp import db
 
-db.create_engine('www-data', 'www-data', 'myblog')
+db.create_engine(user='www-data', passwd='www-data', db='myblog')
 
 u = User(name='Test', email='test@example.com', password='1234567890', image='about:blank')
 
