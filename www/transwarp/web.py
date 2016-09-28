@@ -5,6 +5,7 @@ import threading
 import functools
 import types
 import re
+from transwarp.db import Dict
 
 # 全局ThreadLocal对象：
 ctx = threading.local()
@@ -157,10 +158,6 @@ def view(path):
         return _wrapper
     return _decorator
 
-# 定义拦截器：
-def interceptor(pattern):
-    pass
-
 class Template(object):
     def __init__(self, template_name, **kw):
         self.template_name = template_name
@@ -192,6 +189,50 @@ def _load_module(module_name):
     import_module = module_name[last_dot+1:]
     m = __import__(from_module, globals(), locals(), [import_module])
     return getattr(m, import_module)
+
+#################################
+#   URL拦截器
+#################################
+_RE_INTERCEPTOR_STARTS_WITH = re.compile(r'^([^\*\?]+)\*?$')
+_RE_INTERCEPTOR_ENDS_WITH = re.compile(r'^\*([^\*\?]+)$')
+
+def _build_pattern_fn(pattern):
+    """
+    返回一个函数用于检测字符串
+    """
+    m = _RE_INTERCEPTOR_STARTS_WITH.match(pattern)
+    if m:
+        return lambda p: p.startswith(m.group(1))
+    m = _RE_INTERCEPTOR_ENDS_WITH.match(pattern)
+    if m:
+        return lambda p: p.endswith(m.group(1))
+    raise ValueError('Invalid pattern definition in interceptor.')
+
+def interceptor(pattern='/'):
+    def _decorator(func):
+        func.__interceptor__ = _build_pattern_fn(pattern)
+        return func
+    return _decorator
+
+def _build_interceptor_fn(func, next):
+    """
+    接收next函数，不拦截时执行
+    """
+    def _wrapper():
+        if func.__interceptor__(ctx.request.path_info):
+            return func(next)
+        else:
+            return next()
+    return _wrapper
+
+def _build_interceptor_chain(last_fn, *interceptors):
+    L = list(interceptors)
+    L.reverse()
+    fn = last_fn
+    for f in L:
+        fn = _build_interceptor_fn(f, fn)
+    return fn
+
 
 #################################
 #   WSGIApplication 实现WSGI接口
@@ -262,12 +303,62 @@ class WSGIApplication(object):
     # 返回WSGI处理函数：
     def get_wsgi_application(self):
         self._check_not_running()
+        self._running = True
+
+        _application = Dict(document_root=self._document_root)
+
+        def fn_route():
+            request_method = ctx.request.request_method
+            path_info = ctx.request.path_info
+            if request_method == 'GET':
+                fn = self._get_static.get(path_info, None)
+                if fn:
+                    return fn()
+                for fn in self._get_dynamic:
+                    args = fn.match(path_info)
+                    if args:
+                        return fn(*args)
+                raise HttpError('tmp')
+            if request_method == 'POST':
+                fn = self._post_static.get(path_info, None)
+                if fn:
+                    return fn()
+                for fn in self._post_dynamic:
+                    args = fn.match(path_info)
+                    if args:
+                        return fn(*args)
+                raise HttpError('tmp')
+            raise HttpError('tmp')
+
+        fn_exec = _build_interceptor_chain(fn_route, *self._interceptors)
+
         def wsgi(env, start_response):
-            pass
+            ctx.application = _application
+            ctx.request = Request(env)
+            response = ctx.response = Response()
+            try:
+                r = fn_exec()
+                if isinstance(r, Template):
+                    r = self._template_engine(r.template_name, r.model)
+                if isinstance(r, unicode):
+                    r = r.encode('utf-8')
+                if r is None:
+                    r = []
+                start_response(response.status, response.headers)
+                return r
+            except Exception, e:
+                pass
+            finally:
+                del ctx.application
+                del ctx.request
+                del ctx.response
+        
         return wsgi
 
-    # 开发模式下直接启动服务器：
     def run(self, port=9000, host='127.0.0.1'):
+        """
+        开发模式下直接启动服务器
+        """
         from wsgiref.simple_server import make_server
         server = make_server(host, port, self.get_wsgi_application())
         server.server_forever()
